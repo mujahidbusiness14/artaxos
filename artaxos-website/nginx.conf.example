@@ -1,0 +1,79 @@
+# Artaxos - Nginx server block example
+# Copy into /etc/nginx/sites-available/artaxos, symlink into sites-enabled,
+# then: nginx -t && systemctl reload nginx
+# Not needed on Vercel or Apache.
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name artaxos.com www.artaxos.com;
+    return 301 https://artaxos.com$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name www.artaxos.com;
+
+    ssl_certificate     /etc/letsencrypt/live/artaxos.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/artaxos.com/privkey.pem;
+
+    # the canonical tag points at the bare domain, so send www there
+    return 301 https://artaxos.com$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name artaxos.com;
+
+    root /var/www/artaxos;
+    index index.html;
+
+    ssl_certificate     /etc/letsencrypt/live/artaxos.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/artaxos.com/privkey.pem;
+
+    # --- MIME types for modern image formats ---
+    # Older Nginx builds lack these; without them AVIF and WebP will not render.
+    types {
+        image/avif  avif;
+        image/webp  webp;
+        application/manifest+json webmanifest;
+    }
+
+    # --- compression ---
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/xml application/javascript
+               application/json application/xml image/svg+xml;
+
+    # --- caching ---
+    location ~* ^/(assets|entries)/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    location ~* \.(ico|png|webp|avif|svg|webmanifest)$ {
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    # HTML must revalidate so content edits appear immediately
+    location = /index.html {
+        add_header Cache-Control "public, max-age=0, must-revalidate";
+    }
+
+    location = /sitemap.xml { add_header Content-Type application/xml; }
+    location = /robots.txt  { add_header Content-Type text/plain; }
+
+    # --- security headers ---
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
